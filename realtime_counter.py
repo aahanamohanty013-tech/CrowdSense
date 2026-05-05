@@ -49,8 +49,8 @@ def realtime_counting(model_name="DM-Count", model_weights="SHB", source=0, show
                     last_density_color = cv2.applyColorMap(density_norm.astype(np.uint8), cv2.COLORMAP_JET)
                     last_density_color = cv2.resize(last_density_color, (frame.shape[1], frame.shape[0]))
                     
-                    # Blend with original frame
-                    display_frame = cv2.addWeighted(frame, 0.6, last_density_color, 0.4, 0)
+                    # Create side-by-side display
+                    display_frame = np.hstack((frame, last_density_color))
                 else:
                     count = LWCC.get_count(temp_img_path, model=model)
                     display_frame = frame.copy()
@@ -60,17 +60,17 @@ def realtime_counting(model_name="DM-Count", model_weights="SHB", source=0, show
         else:
             # For intermediate frames, re-apply the last density overlay if it exists
             if show_density and last_density_color is not None:
-                display_frame = cv2.addWeighted(frame, 0.6, last_density_color, 0.4, 0)
+                display_frame = np.hstack((frame, last_density_color))
             else:
                 display_frame = frame.copy()
 
         end_time = time.time()
         fps = 1 / (end_time - start_time)
         
-        # Overlay Info
-        cv2.putText(display_frame, f"Count: {count:.2f}", (20, 50), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.putText(display_frame, f"Model: {model_name} ({model_weights})", (20, 80), 
+        # Overlay Info (Round the count to nearest whole number)
+        cv2.putText(display_frame, f"Count: {int(round(count))}", (20, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+        cv2.putText(display_frame, f"Model: {model_name} ({model_weights})", (20, 90), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
         cv2.imshow("LWCC Real-Time Crowd Counting", display_frame)
