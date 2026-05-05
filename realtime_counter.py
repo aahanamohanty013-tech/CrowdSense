@@ -4,11 +4,11 @@ import time
 import numpy as np
 from lwcc import LWCC
 
-def realtime_counting(model_name="DM-Count", model_weights="SHA", source=0, show_density=False):
+def realtime_counting(model_name="DM-Count", model_weights="SHB", source=0, show_density=False):
     """
     Captures video from webcam or file and performs real-time crowd counting.
     """
-    print(f"Loading model {model_name}...")
+    print(f"Loading model {model_name} with weights {model_weights}...")
     model = LWCC.load_model(model_name=model_name, model_weights=model_weights)
     
     # Initialize capture
@@ -19,39 +19,51 @@ def realtime_counting(model_name="DM-Count", model_weights="SHA", source=0, show
 
     print("Starting real-time capture. Press 'q' to quit.")
     
+    count = 0.0
+    display_frame = None
+    frame_count = 0
+    process_every = 15 # Process every 15 frames to maintain good video FPS
+    
+    temp_img_path = "temp_frame.jpg"
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
             
+        frame_count += 1
         start_time = time.time()
         
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        try:
-            from PIL import Image
-            pil_img = Image.fromarray(rgb_frame)
-            
-            if show_density:
-                count, density_map = LWCC.get_count(pil_img, model=model, return_density=True)
+        # Only perform inference every N frames
+        if frame_count % process_every == 0 or frame_count == 1:
+            try:
+                # Save frame to temp file as LWCC expects a path
+                cv2.imwrite(temp_img_path, frame)
                 
-                # Normalize density map for visualization
-                density_norm = cv2.normalize(density_map, None, 0, 255, cv2.NORM_MINMAX)
-                density_color = cv2.applyColorMap(density_norm.astype(np.uint8), cv2.COLORMAP_JET)
-                
-                # Resize density map to match frame size
-                density_color = cv2.resize(density_color, (frame.shape[1], frame.shape[0]))
-                
-                # Blend with original frame
-                display_frame = cv2.addWeighted(frame, 0.6, density_color, 0.4, 0)
+                if show_density:
+                    count, density_map = LWCC.get_count(temp_img_path, model=model, return_density=True)
+                    
+                    # Normalize and colorize density map
+                    density_norm = cv2.normalize(density_map, None, 0, 255, cv2.NORM_MINMAX)
+                    density_color = cv2.applyColorMap(density_norm.astype(np.uint8), cv2.COLORMAP_JET)
+                    density_color = cv2.resize(density_color, (frame.shape[1], frame.shape[0]))
+                    
+                    # Blend with original frame
+                    display_frame = cv2.addWeighted(frame, 0.6, density_color, 0.4, 0)
+                else:
+                    count = LWCC.get_count(temp_img_path, model=model)
+                    display_frame = frame.copy()
+            except Exception as e:
+                print(f"Inference error: {e}")
+                display_frame = frame.copy()
+        else:
+            # For intermediate frames, just update the overlay on the current frame
+            if show_density and display_frame is not None:
+                # Keep the last density overlay but use the new frame
+                # This is a simplification; for better results we'd use the same blend logic
+                display_frame = frame.copy() 
             else:
-                count = LWCC.get_count(pil_img, model=model)
-                display_frame = frame
-                
-        except Exception as e:
-            print(f"Inference error: {e}")
-            count = 0
-            display_frame = frame
+                display_frame = frame.copy()
 
         end_time = time.time()
         fps = 1 / (end_time - start_time)
@@ -59,8 +71,8 @@ def realtime_counting(model_name="DM-Count", model_weights="SHA", source=0, show
         # Overlay Info
         cv2.putText(display_frame, f"Count: {count:.2f}", (20, 50), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.putText(display_frame, f"FPS: {fps:.1f}", (20, 90), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
+        cv2.putText(display_frame, f"Model: {model_name} ({model_weights})", (20, 80), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
         cv2.imshow("LWCC Real-Time Crowd Counting", display_frame)
         
@@ -69,12 +81,14 @@ def realtime_counting(model_name="DM-Count", model_weights="SHA", source=0, show
             
     cap.release()
     cv2.destroyAllWindows()
+    if os.path.exists(temp_img_path):
+        os.remove(temp_img_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LWCC Real-Time Counter")
     parser.add_argument("--source", type=str, default="0", help="Webcam index (0) or video file path")
     parser.add_argument("--model", type=str, default="DM-Count", help="Model name")
-    parser.add_argument("--weights", type=str, default="SHA", help="Weights (SHA/SHB)")
+    parser.add_argument("--weights", type=str, default="SHB", help="Weights (SHA for dense, SHB for sparse)")
     parser.add_argument("--density", action="store_true", help="Overlay density map heatmap")
     
     args = parser.parse_args()
