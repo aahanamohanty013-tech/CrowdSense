@@ -25,6 +25,7 @@ def realtime_counting(model_name="DM-Count", model_weights="SHB", source=0, show
     process_every = 15 # Process every 15 frames to maintain good video FPS
     
     temp_img_path = "temp_frame.jpg"
+    last_density_color = None
 
     while True:
         ret, frame = cap.read()
@@ -45,11 +46,11 @@ def realtime_counting(model_name="DM-Count", model_weights="SHB", source=0, show
                     
                     # Normalize and colorize density map
                     density_norm = cv2.normalize(density_map, None, 0, 255, cv2.NORM_MINMAX)
-                    density_color = cv2.applyColorMap(density_norm.astype(np.uint8), cv2.COLORMAP_JET)
-                    density_color = cv2.resize(density_color, (frame.shape[1], frame.shape[0]))
+                    last_density_color = cv2.applyColorMap(density_norm.astype(np.uint8), cv2.COLORMAP_JET)
+                    last_density_color = cv2.resize(last_density_color, (frame.shape[1], frame.shape[0]))
                     
                     # Blend with original frame
-                    display_frame = cv2.addWeighted(frame, 0.6, density_color, 0.4, 0)
+                    display_frame = cv2.addWeighted(frame, 0.6, last_density_color, 0.4, 0)
                 else:
                     count = LWCC.get_count(temp_img_path, model=model)
                     display_frame = frame.copy()
@@ -57,11 +58,9 @@ def realtime_counting(model_name="DM-Count", model_weights="SHB", source=0, show
                 print(f"Inference error: {e}")
                 display_frame = frame.copy()
         else:
-            # For intermediate frames, just update the overlay on the current frame
-            if show_density and display_frame is not None:
-                # Keep the last density overlay but use the new frame
-                # This is a simplification; for better results we'd use the same blend logic
-                display_frame = frame.copy() 
+            # For intermediate frames, re-apply the last density overlay if it exists
+            if show_density and last_density_color is not None:
+                display_frame = cv2.addWeighted(frame, 0.6, last_density_color, 0.4, 0)
             else:
                 display_frame = frame.copy()
 
